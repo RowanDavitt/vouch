@@ -13,6 +13,14 @@ inputs:
     description: "Repository in 'owner/repo' format (default: current repository)."
     required: false
     default: ""
+  platform:
+    description: "Url for the platform (ex: codeberg.com) (default: current url for current platform)."
+    required: false
+    default: ""
+  api_url:
+    description: "Url to send api requests (ex: https://codeberg.com/api/v1)  (default: current api for current platform)."
+    required: false
+    default: ""
   vouched-file:
     description: "Path to the vouched contributors file in the repo."
     required: false
@@ -41,9 +49,9 @@ runs:
         use "${{ forgejo.action_path }}/../../vouch" *
 
         let repo_data = (fj-check-user "${{ inputs.user }}"
-          -B "${{ inputs.url || forgejo.server_url }}"
           -R "${{ inputs.repo || forgejo.repository }}"
-          --url "${{inputs.url || env.FORGEJO_SERVER_URL}}"
+          -A "${{ inputs.api_url || forgejo.api_url }}"
+          -P "${{inputs.platform_url ||  forgejo.server_url}}"
           --vouched-repo "${{ inputs.vouched-repo }}"
           --vouched-file "${{ inputs.vouched-file }}"
         )

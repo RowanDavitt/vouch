@@ -17,6 +17,14 @@ inputs:
     description: "Repository in 'owner/repo' format (default: current repository)."
     required: false
     default: ""
+  platform_url:
+    description: "Url for the platform (ex: codeberg.com) (default: current url for current platform)."
+    required: false
+    default: ""
+  api_url:
+    description: "Url to send api requests (ex: https://codeberg.com/api/v1)  (default: current api for current platform)."
+    required: false
+    default: ""
   require-vouch:
     description: "Require users to be vouched (false = only block denounced)."
     required: false
@@ -51,9 +59,9 @@ runs:
 
         let status = (fj-check-issue
           ${{ inputs.issue-number }}
-          --base_url "${{ inputs.url || forgejo.server_url }}"
-          --repo "${{ inputs.repo || forgejo.repository }}"
-          --url "${{inputs.url || env.FORGEJO_SERVER_URL}}"
+          -R "${{ inputs.repo || forgejo.repository }}"
+          -A "${{ inputs.api_url || forgejo.api_url }}"
+          -P "${{inputs.platform_url ||  forgejo.server_url}}"
           --vouched-repo "${{ inputs.vouched-repo }}"
           --vouched-file "${{ inputs.vouched-file }}"
           --template-file "${{ inputs.template-file }}"

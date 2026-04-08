@@ -40,6 +40,14 @@ inputs:
     description: "Repository in 'owner/repo' format (default: current repository)."
     required: false
     default: ""
+  platform_url:
+    description: "Url for the platform (ex: codeberg.com) (default: current url for current platform)."
+    required: false
+    default: ""
+  api_url:
+    description: "Url to send api requests (ex: https://codeberg.com/api/v1)  (default: current api for current platform)."
+    required: false
+    default: ""
   roles:
     description: "Comma-separated list of GitHub role names allowed to manage (default: admin,maintain,write,triage)."
     required: false
@@ -104,8 +112,9 @@ runs:
         let status = (fj-manage-by-issue
           ${{ inputs.issue-id }}
           ${{ inputs.comment-id }}
-          --base_url "${{ inputs.url || forgejo.server_url }}"
-          --repo "${{ inputs.repo || forgejo.repository }}"
+          -R "${{ inputs.repo || forgejo.repository }}"
+          -A "${{ inputs.api_url || forgejo.api_url }}"
+          -P "${{inputs.platform_url ||  forgejo.server_url}}"
           --vouched-file "${{ inputs.vouched-file }}"
           --vouch-keyword $vouch_kw
           --denounce-keyword $denounce_kw

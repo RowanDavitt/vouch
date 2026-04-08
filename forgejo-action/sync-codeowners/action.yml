@@ -6,6 +6,14 @@ inputs:
     description: "Repository in 'owner/repo' format (default: current)."
     required: false
     default: ""
+  platform_url:
+    description: "Url for the platform (ex: codeberg.com) (default: current url for current platform)."
+    required: false
+    default: ""
+  api_url:
+    description: "Url to send api requests (ex: https://codeberg.com/api/v1)  (default: current api for current platform)."
+    required: false
+    default: ""
   codeowners-file:
     description: "Path to CODEOWNERS file (empty = auto-detect)."
     required: false
@@ -47,8 +55,9 @@ runs:
         use "${{ forgejo.action_path }}/../../vouch" *
 
         let status = (fj-sync-codeowners
-          --base_url "${{ inputs.url || forgejo.server_url }}"
-          --repo "${{ inputs.repo || forgejo.repository }}"
+          -R "${{ inputs.repo || forgejo.repository }}"
+          -A "${{ inputs.api_url || forgejo.api_url }}"
+          -P "${{inputs.platform_url ||  forgejo.server_url}}"
           --codeowners-file "${{ inputs.codeowners-file }}"
           --vouched-file "${{ inputs.vouched-file }}"
           --commit-message "${{ inputs.commit-message }}"

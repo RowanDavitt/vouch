@@ -1,4 +1,4 @@
-# GitHub API utilities and CLI commands for Nu scripts
+# Forgejo API utilities and CLI commands for Nu scripts
 
 use file.nu [default-path, "from td", init-file, open-file, "to td"]
 use git.nu [commit-and-push]
@@ -14,6 +14,9 @@ use lib.nu [
 use template.nu
 const pr_template = path self ./templates/forgejo-pr-unvouched
 const issue_template = path self ./templates/forgejo-issue-unvouched
+
+const default_api_path =  "/api/v1"
+
 
 # Check if a PR author is a vouched contributor.
 #
@@ -37,7 +40,7 @@ const issue_template = path self ./templates/forgejo-issue-unvouched
 #   * {repo} - The repository name
 #   * {default_branch} - The repository default branch
 # 
-# See "vouch/templates/github-pr-unvouched" for the default PR template, which
+# See "vouch/templates/forgejo-pr-unvouched" for the default PR template, which
 # can be used as an example.
 #
 # Outputs status: "skipped" (bot), "vouched", "allowed", or "closed".
@@ -54,9 +57,10 @@ const issue_template = path self ./templates/forgejo-issue-unvouched
 #   ./vouch.nu gh-check-pr 123 --require-vouch=false --auto-close
 #
 export def fj-check-pr [
-  pr_number: int,              # GitHub PR number
-  --base_url (-B): string      # Url 
+  pr_number: int,              # Forgejo PR number
   --repo (-R): string,         # Repository in "owner/repo" format (required)
+  --api_url(-A): string,       # Url for api requests (defaults to --platform+default_api_path)
+  --platform_url (-P): string,     # Url for Forgejo instance
   --vouched-repo: string,      # Repository for the vouched file (defaults to --repo)
   --vouched-file: string = ".forejo/VOUCHED.td", # Path to vouched contributors file in the repo
   --template-file: string = $pr_template,        # Optional path to response template to use for unvouched users
@@ -67,16 +71,21 @@ export def fj-check-pr [
   if ($repo | is-empty) {
     error make { msg: "--repo is required" }
   }
+  if ($api_url | is-empty) { 
+    error make { msg: "--api_url is required" } 
+  }
+  let platform = canon_platform $platform_url $api_url
 
   let repo_parts = ($repo | split row "/" | {owner: $in.0, name: $in.1})
 
-  let pr_data = api "get" $base_url $"/repos/($repo_parts.owner)/($repo_parts.name)/pulls/($pr_number)"
+  let pr_data = api "get" $api_url $"/repos/($repo_parts.owner)/($repo_parts.name)/pulls/($pr_number)"
   let pr_author = $pr_data.user.login
   let default_branch = $pr_data.base.repo.default_branch
 
   let result = (fj-check-user $pr_author
-    -B $base_url
     -R $repo
+    -P $platform
+    --api_url $api_url
     --vouched-repo $vouched_repo
     --vouched-file $vouched_file
     --default-branch $default_branch)
@@ -112,11 +121,11 @@ export def fj-check-pr [
       return "closed"
     }
 
-    api "post" $base_url $"/repos/($repo_parts.owner)/($repo_parts.name)/issues/($pr_number)/comments" {
+    api "post" $api_url $"/repos/($repo_parts.owner)/($repo_parts.name)/issues/($pr_number)/comments" {
       body: $message
     }
 
-    api "patch" $base_url $"/repos/($repo_parts.owner)/($repo_parts.name)/pulls/($pr_number)" {
+    api "patch" $api_url $"/repos/($repo_parts.owner)/($repo_parts.name)/pulls/($pr_number)" {
       state: "closed"
     }
 
@@ -141,6 +150,7 @@ export def fj-check-pr [
     owner: $repo_parts.owner,
     repo: $repo_parts.name,
     default_branch: $default_branch,
+    platform: $platform
   } | template render (if ($template_file | is-not-empty) { $template_file } else $pr_template)
 
   if $dry_run {
@@ -148,11 +158,11 @@ export def fj-check-pr [
     return "closed"
   }
 
-  api "post" $base_url $"/repos/($repo_parts.owner)/($repo_parts.name)/issues/($pr_number)/comments" {
+  api "post" $api_url $"/repos/($repo_parts.owner)/($repo_parts.name)/issues/($pr_number)/comments" {
     body: $message
   }
 
-  api "patch" $base_url $"/repos/($repo_parts.owner)/($repo_parts.name)/pulls/($pr_number)" {
+  api "patch" $api_url $"/repos/($repo_parts.owner)/($repo_parts.name)/pulls/($pr_number)" {
     state: "closed"
   }
 
@@ -181,7 +191,7 @@ export def fj-check-pr [
 #   * {repo} - The repository name
 #   * {default_branch} - The repository default branch
 # 
-# See "vouch/templates/github-issue-unvouched" for the default issue template,
+# See "vouch/templates/forgejo-issue-unvouched" for the default issue template,
 # which can be used as an example.
 #
 # Outputs status: "skipped" (bot), "vouched", "allowed", or "closed".
@@ -198,9 +208,10 @@ export def fj-check-pr [
 #   ./vouch.nu gh-check-issue 123 --require-vouch=false --auto-close
 #
 export def fj-check-issue [
-  issue_number: int,             # GitHub issue number
-  --base_url (-B): string,
+  issue_number: int,             # Forgejo issue number
   --repo (-R): string,           # Repository in "owner/repo" format (required)
+  --platform_url (-P): string,   # Url for the Forgejo instance
+  --api_url (-A): string,        # Url for api requests
   --vouched-repo: string,        # Repository for the vouched file (defaults to --repo)
   --vouched-file: string = ".github/VOUCHED.td", # Path to vouched contributors file in the repo
   --template-file: string = $issue_template,     # Optional path to response template to use for unvouched users
@@ -211,20 +222,25 @@ export def fj-check-issue [
   if ($repo | is-empty) {
     error make { msg: "--repo is required" }
   }
+  if ($api_url | is-empty) { 
+    error make { msg: "--api_url is required" } 
+  }
+  let platform = canon_platform $platform_url $api_url
 
   let owner = ($repo | split row "/" | first)
   let repo_name = ($repo | split row "/" | last)
 
-  let issue_data = api "get" $base_url $"/repos/($owner)/($repo_name)/issues/($issue_number)"
+  let issue_data = api "get" $api_url $"/repos/($owner)/($repo_name)/issues/($issue_number)"
   let issue_author = $issue_data.user.login
   let default_branch = try { $issue_data.repository.default_branch } catch {
-    let repo_data = api "get" $base_url $"/repos/($owner)/($repo_name)"
+    let repo_data = api "get" $api_url $"/repos/($owner)/($repo_name)"
     $repo_data.default_branch
   }
 
   let result = (fj-check-user $issue_author
-    -B $base_url
     -R $repo
+    -A $api_url
+    -P $platform
     --vouched-repo $vouched_repo
     --vouched-file $vouched_file
     --default-branch $default_branch)
@@ -260,11 +276,11 @@ export def fj-check-issue [
       return "closed"
     }
 
-    api "post" $base_url $"/repos/($owner)/($repo_name)/issues/($issue_number)/comments" {
+    api "post" $api_url $"/repos/($owner)/($repo_name)/issues/($issue_number)/comments" {
       body: $message
     }
 
-    api "patch" $base_url $"/repos/($owner)/($repo_name)/issues/($issue_number)" {
+    api "patch" $api_url $"/repos/($owner)/($repo_name)/issues/($issue_number)" {
       state: "closed",
       state_reason: "not_planned",
     }
@@ -297,11 +313,11 @@ export def fj-check-issue [
     return "closed"
   }
 
-  api "post" $base_url $"/repos/($owner)/($repo_name)/issues/($issue_number)/comments" {
+  api "post" $api_url $"/repos/($owner)/($repo_name)/issues/($issue_number)/comments" {
     body: $message
   }
 
-  api "patch" $base_url $"/repos/($owner)/($repo_name)/issues/($issue_number)" {
+  api "patch" $api_url $"/repos/($owner)/($repo_name)/issues/($issue_number)" {
     state: "closed",
     state_reason: "not_planned",
   }
@@ -358,8 +374,9 @@ export def fj-check-issue [
 export def fj-manage-by-issue [
   issue_id: int,           # GitHub issue number
   comment_id: int,         # GitHub comment ID
-  --base_url (-B): string,
   --repo (-R): string,     # Repository in "owner/repo" format (required)
+  --platform_url (-P): string       # Url for Forgejo instance
+  --api_url (-A): string,       # Url for api requests (defaults to --platform+default_api_path)
   --vouched-file: string = "",  # Path to vouched contributors file (default: VOUCHED.td or .github/VOUCHED.td)
   --vouch-keyword: list<string> = [], # Keywords that trigger vouching (default: ["vouch"])
   --denounce-keyword: list<string> = [], # Keywords that trigger denouncing (default: ["denounce"])
@@ -378,17 +395,21 @@ export def fj-manage-by-issue [
   if ($repo | is-empty) {
     error make { msg: "--repo is required" }
   }
+  if ($api_url | is-empty) { 
+    error make { msg: "--api_url is required" } 
+  }
+  let platform = canon_platform $platform_url $api_url
 
   let file = resolve-vouched-file $vouched_file
 
   let owner = ($repo | split row "/" | first)
   let repo_name = ($repo | split row "/" | last)
   let issue_data = (
-    api "get" $base_url
+    api "get" $api_url
       $"/repos/($owner)/($repo_name)/issues/($issue_id)"
   )
   let comment_data = (
-    api "get" $base_url
+    api "get" $api_url
       $"/repos/($owner)/($repo_name)/issues/comments/($comment_id)"
   )
 
@@ -397,6 +418,9 @@ export def fj-manage-by-issue [
   let comment_body = (
     $comment_data.body | default "" | str trim
   )
+
+  # get the comment url here instead of reconstructing it later
+  let comment_url = $comment_data.html_url
 
   let vouch_keywords = if ($vouch_keyword | is-empty) {
     ["vouch"]
@@ -428,7 +452,7 @@ export def fj-manage-by-issue [
   }
 
   if not (
-    can-manage $commenter $base_url $owner $repo_name
+    can-manage $commenter $platform $owner $repo_name
       --roles $roles
       --vouched-managers $vouched_managers
   ) {
@@ -438,7 +462,7 @@ export def fj-manage-by-issue [
 
   let target_user = $parsed.user | default $issue_author
   let prior = open -r $file
-  let result = (fj-apply-action
+  let result = (fj-apply-action $platform
     $parsed.action $target_user $parsed.reason $file
     --dry-run=$dry_run)
 
@@ -453,210 +477,25 @@ export def fj-manage-by-issue [
         | lines
         | first
       )
-      let comment_url = $"https://github.com/($owner)/($repo_name)/issues/($issue_id)#issuecomment-($comment_id)"
       let body = $"Triggered by [comment]\(($comment_url)\) from @($commenter).\n\n($parsed.action | str capitalize): @($target_user)"
-      open-pr $base_url $owner $repo_name $branch $title $body --merge-immediately=$merge_immediately
+      open-pr $api_url $owner $repo_name $branch $title $body --merge-immediately=$merge_immediately
     } else {
       (commit-and-push $file
         --message $commit_message
         --retry 3
         --retry-action {
           $prior | save -f $file
-          fj-apply-action (
+          fj-apply-action platform (
             $parsed.action
           ) $target_user $parsed.reason $file
         })
     }
-    try { react $owner $base_url $repo_name $comment_id "+1" }
+    try { react $owner $api_url $repo_name $comment_id "+1" }
   }
 
   $result.status
 }
 
-# Manage contributor status via discussion comments.
-#
-# This checks if a comment matches a vouch keyword (default: "vouch"),
-# denounce keyword (default: "denounce"), or unvouch keyword (default:
-# "unvouch"), verifies the commenter has sufficient permissions, and
-# updates the vouched list accordingly.
-#
-# Discussion data is fetched via the GitHub GraphQL API since discussions
-# are not available through the REST API.
-#
-# Permission is checked using role_name from the collaborator API.
-# When --roles is empty (default), the legacy permission field is
-# also accepted if it is "admin" or "write".
-#
-# For vouch, the comment can be:
-#   - "vouch" - vouches the discussion author
-#   - "vouch @user" - vouches the specified user
-#   - "vouch <reason>" - vouches the discussion author with a reason
-#   - "vouch @user <reason>" - vouches the specified user with a reason
-#
-# For denounce, the comment can be:
-#   - "denounce" - denounces the discussion author
-#   - "denounce @user" - denounces the specified user
-#   - "denounce <reason>" - denounces the discussion author with a reason
-#   - "denounce @user <reason>" - denounces the specified user with a reason
-#
-# For unvouch, the comment can be:
-#   - "unvouch" - removes the discussion author
-#   - "unvouch @user" - removes the specified user
-#
-# Use --vouch-keyword, --denounce-keyword, and --unvouch-keyword to
-# customize the trigger words. Multiple keywords can be specified as a list.
-#
-# Outputs a status to stdout: "vouched", "denounced", "unvouched", or "unchanged"
-#
-# Examples:
-#
-#   # Dry run (default) - see what would happen
-#   ./vouch.nu gh-manage-by-discussion 42 DC_kwDOExample
-#
-#   # Dry run with a numerical ID found in URLs
-#   ./vouch.nu gh-manage-by-discussion 42 11579492
-#
-#   # Actually perform the action
-#   ./vouch.nu gh-manage-by-discussion 42 DC_kwDOExample --dry-run=false
-#
-#   # Custom vouch keywords
-#   ./vouch.nu gh-manage-by-discussion 42 DC_kwDOExample --vouch-keyword [lgtm approve]
-#
-#   # Create a pull request instead of pushing directly
-#   ./vouch.nu gh-manage-by-discussion 42 DC_kwDOExample --pull-request --dry-run=false
-#
-export def fj-manage-by-discussion [
-  discussion_number: int,  # GitHub discussion number
-  comment_node_id: oneof<int, string>, # GraphQL node ID or numerical URL ID of the comment (e.g. DC_kwDO... or 11579492)
-  --base_url (-B): string
-  --repo (-R): string,     # Repository in "owner/repo" format (required)
-  --vouched-file: string = "",  # Path to vouched contributors file (default: VOUCHED.td or .github/VOUCHED.td)
-  --vouch-keyword: list<string> = [], # Keywords that trigger vouching (default: ["vouch"])
-  --denounce-keyword: list<string> = [], # Keywords that trigger denouncing (default: ["denounce"])
-  --unvouch-keyword: list<string> = [], # Keywords that trigger unvouching (default: ["unvouch"])
-  --allow-vouch = true,   # Enable vouch handling
-  --allow-denounce = true, # Enable denounce handling
-  --allow-unvouch = true,  # Enable unvouch handling
-  --roles: list<string> = [], # Allowed role names (default: [admin maintain write triage])
-  --vouched-managers: record, # Optional managers file config
-  --commit = true,         # Commit and push changes
-  --commit-message: string = "", # Git commit message
-  --pull-request = false,  # Create a pull request instead of pushing directly
-  --merge-immediately = false, # Merge the pull request immediately after creation
-  --dry-run = true,        # Print what would happen without making changes
-] {
-  if ($repo | is-empty) {
-    error make { msg: "--repo is required" }
-  }
-
-  let comment_node_id = if ($comment_node_id | describe) == "int" {
-    # Numerical URL ID -> GraphQL node ID
-    "DC_" + (
-      $comment_node_id
-      | into binary --endian big
-      | bits or 0x[93 00 00 ce]
-      | encode base64
-    )
-  } else { $comment_node_id }
-
-  let file = resolve-vouched-file $vouched_file
-
-  let owner = ($repo | split row "/" | first)
-  let repo_name = ($repo | split row "/" | last)
-
-  const gql_dir = (
-    path self | path dirname | path join "gql"
-  )
-  let query = open -r (
-    [$gql_dir "fj-discussion-comment.gql"] | path join
-  )
-  let comment_result = graphql $query --variables {
-    owner: $owner,
-    repo_name: $repo_name,
-    discussion_number: $discussion_number,
-    comment_node_id: $comment_node_id,
-  }
-  let discussion_author = (
-    $comment_result.data.repository.discussion.author.login
-  )
-  let commenter = $comment_result.data.node.author.login
-  let body = (
-    $comment_result.data.node.body | default "" | str trim
-  )
-
-  let vouch_keywords = if ($vouch_keyword | is-empty) {
-    ["vouch"]
-  } else {
-    $vouch_keyword
-  }
-  let denounce_keywords = if ($denounce_keyword | is-empty) {
-    ["denounce"]
-  } else {
-    $denounce_keyword
-  }
-  let unvouch_keywords = if ($unvouch_keyword | is-empty) {
-    ["unvouch"]
-  } else {
-    $unvouch_keyword
-  }
-
-  let parsed = (parse-comment $body
-    --vouch-keyword $vouch_keywords
-    --denounce-keyword $denounce_keywords
-    --unvouch-keyword $unvouch_keywords
-    --allow-vouch=$allow_vouch
-    --allow-denounce=$allow_denounce
-    --allow-unvouch=$allow_unvouch)
-
-  if $parsed.action == null {
-    print "Comment does not match any enabled action"
-    return "unchanged"
-  }
-
-  if not (
-    can-manage $commenter $base_url $owner $repo_name
-      --roles $roles
-      --vouched-managers $vouched_managers
-  ) {
-    print $"($commenter) does not have sufficient access"
-    return "unchanged"
-  }
-
-  let target_user = $parsed.user | default $discussion_author
-  let prior = open -r $file
-  let result = (fj-apply-action
-    $parsed.action $target_user $parsed.reason $file
-    --dry-run=$dry_run)
-
-  if $result.acted and $commit {
-    if $pull_request {
-      let branch = (commit-and-push $file
-        --message $commit_message
-        --branch "vouch/")
-      let title = (
-        $commit_message
-        | default -e "Update VOUCHED list"
-        | lines
-        | first
-      )
-      let body = (
-        $"Triggered by [discussion comment]\(($comment_result.data.node.url)\) from @($commenter).\n\n($parsed.action | str capitalize): @($target_user)"
-      )
-      open-pr $base_url $owner $repo_name $branch $title $body --merge-immediately=$merge_immediately
-    } else {
-      (commit-and-push $file
-        --message $commit_message
-        --retry 3
-        --retry-action {
-          $prior | save -f $file
-          fj-apply-action $parsed.action $target_user $parsed.reason $file
-        })
-    }
-    try { react-graphql $comment_node_id "+1" }
-  }
-
-  $result.status
-}
 
 # Sync CODEOWNERS entries into the vouched list.
 #
@@ -676,8 +515,9 @@ export def fj-manage-by-discussion [
 #
 # Outputs status: "updated" or "unchanged".
 export def fj-sync-codeowners [
-  --base_url (-B): string,
   --repo (-R): string,        # Repository in "owner/repo" format
+  --platform_url (-P): string,        # Url for Forgejo instance
+  --api_url (-A): string,         # Url for api requests
   --codeowners-file: string = "", # Path to CODEOWNERS file
   --vouched-file: string = "", # Path to vouched contributors file
   --commit = true,            # Commit and push changes
@@ -689,6 +529,10 @@ export def fj-sync-codeowners [
   if ($repo | is-empty) {
     error make { msg: "--repo is required" }
   }
+  if ($api_url | is-empty) { 
+    error make { msg: "--api_url is required" } 
+  }
+  let platform = canon_platform $platform_url $api_url
 
   let owner = ($repo | split row "/" | first)
   let repo_name = ($repo | split row "/" | last)
@@ -714,13 +558,13 @@ export def fj-sync-codeowners [
   )
 
   # Resolve team paths into individual members by querying
-  # the GitHub API for each team's membership.
+  # the Forgejo API for each team's membership.
   mut team_members = []
   for team_path in $team_paths {
     let parts = ($team_path | split row "/" --number 2)
     let org = ($parts | first)
     let team = ($parts | get 1)
-    let members = fj-team-members $base_url $org $team
+    let members = fj-team-members $api_url $org $team
     $team_members = ($team_members | append $members)
   }
 
@@ -748,13 +592,13 @@ export def fj-sync-codeowners [
   for user in $users {
     let status = (
       $updated
-      | check-user $user --default-platform forejo
+      | check-user $user --default-platform $platform
     )
 
     if $status != "vouched" {
       $updated = (
         $updated
-        | add-user $user --default-platform forejo
+        | add-user $user --default-platform $platform
       )
       $added = ($added | append $user)
     }
@@ -811,7 +655,7 @@ export def fj-sync-codeowners [
         ""
         $user_list
       ] | str join "\n")
-      (open-pr $base_url $owner $repo_name $branch $title $body
+      (open-pr $api_url $owner $repo_name $branch $title $body
         --merge-immediately=$merge_immediately)
     } else {
       let to_add = $added_users
@@ -824,7 +668,7 @@ export def fj-sync-codeowners [
           for user in $to_add {
             $retry_records = (
               $retry_records
-              | add-user $user --default-platform forejo
+              | add-user $user --default-platform $platform
             )
           }
           $retry_records | to td | save -f $file
@@ -850,20 +694,20 @@ def resolve-codeowners-file [codeowners_file: string] {
     return "CODEOWNERS"
   }
 
-  if (".github/CODEOWNERS" | path exists) {
-    return ".github/CODEOWNERS"
+  if (".foregjo/CODEOWNERS" | path exists) {
+    return ".foregjo/CODEOWNERS"
   }
 
   error make { msg: "CODEOWNERS file not found" }
 }
 
-# Fetch all members of a GitHub team (paginated).
-def fj-team-members [base_url:string org: string, team: string] {
+# Fetch all members of a Forgejo team (paginated).
+def fj-team-members [api_url:string org: string, team: string] {
   mut page = 1
   mut members = []
 
   loop {
-    let result = (api "get" $base_url (
+    let result = (api "get" $api_url (
       $"/orgs/($org)/teams/($team)/members?"
       + $"per_page=100&page=($page)"
     ))
@@ -880,7 +724,7 @@ def fj-team-members [base_url:string org: string, team: string] {
   $members | uniq
 }
 
-# Resolve the vouched file path, falling back to default-path or .github/VOUCHED.td.
+# Resolve the vouched file path, falling back to default-path or .foregjo/VOUCHED.td.
 def resolve-vouched-file [vouched_file: string] {
   if ($vouched_file | is-not-empty) {
     return $vouched_file
@@ -888,7 +732,7 @@ def resolve-vouched-file [vouched_file: string] {
 
   let default = default-path
   if ($default | is-empty) {
-    ".github/VOUCHED.td"
+    ".foregjo/VOUCHED.td"
   } else {
     $default
   }
@@ -900,6 +744,7 @@ def resolve-vouched-file [vouched_file: string] {
 #   - status: "vouched", "denounced", "unvouched", or "unchanged"
 #   - acted: true if a real change was made (not dry-run, not already in desired state)
 def fj-apply-action [
+  platform: string,        # URL of of the Forgejo instance
   action: string,          # "vouch", "denounce", or "unvouch"
   target_user: string,     # Forgejo username to act on
   reason: string,          # Reason for the action (may be empty)
@@ -913,7 +758,7 @@ def fj-apply-action [
   let records = open-file $file
 
   if $action == "vouch" {
-    let status = $records | check-user $target_user --default-platform forgejo
+    let status = $records | check-user $target_user --default-platform $platform
     if $status == "vouched" {
       print $"($target_user) is already vouched"
       return { status: "unchanged", acted: false }
@@ -924,7 +769,7 @@ def fj-apply-action [
       return { status: "vouched", acted: false }
     }
 
-    let new_records = $records | add-user $target_user --default-platform forgejo --details $reason
+    let new_records = $records | add-user $target_user --default-platform $platform --details $reason
     $new_records | to td | save -f $file
 
     print $"Added ($target_user) to vouched contributors"
@@ -932,7 +777,7 @@ def fj-apply-action [
   }
 
   if $action == "denounce" {
-    let status = $records | check-user $target_user --default-platform forgejo
+    let status = $records | check-user $target_user --default-platform $platform
     if $status == "denounced" {
       print $"($target_user) is already denounced"
       return { status: "unchanged", acted: false }
@@ -944,7 +789,7 @@ def fj-apply-action [
       return { status: "denounced", acted: false }
     }
 
-    let new_records = $records | denounce-user $target_user $reason --default-platform forgejo
+    let new_records = $records | denounce-user $target_user $reason --default-platform $platform
     $new_records | to td | save -f $file
 
     print $"Denounced ($target_user)"
@@ -952,7 +797,7 @@ def fj-apply-action [
   }
 
   if $action == "unvouch" {
-    let status = $records | check-user $target_user --default-platform forgejo
+    let status = $records | check-user $target_user --default-platform $platform
     if $status == "unknown" {
       print $"($target_user) is not in the vouched contributors list"
       return { status: "unchanged", acted: false }
@@ -963,7 +808,7 @@ def fj-apply-action [
       return { status: "unvouched", acted: false }
     }
 
-    let new_records = $records | remove-user $target_user --default-platform forgejo
+    let new_records = $records | remove-user $target_user --default-platform $platform
     $new_records | to td | save -f $file
 
     print $"Removed ($target_user) from vouched contributors"
@@ -984,7 +829,8 @@ def fj-apply-action [
 # `--allow-collaborator=false` when you only want file-based status.
 export def fj-check-user [
   user: string,            # Forgejo username to check
-  --base_url (-B): string,
+  --platform_url (-P): string, # Url for Forgejo instance
+  --api_url (-A): string,  # Url for api requests
   --repo (-R): string,     # Repository in "owner/repo" format
   --vouched-repo: string,  # Repository for the vouched file (defaults to --repo)
   --vouched-file: string,  # Path to vouched contributors file in the repo
@@ -996,6 +842,11 @@ export def fj-check-user [
   let vr = if ($vouched_repo | default "" | is-empty) { $repo } else { $vouched_repo }
   let vouch_parts = ($vr | split row "/" | {owner: $in.0, name: $in.1})
 
+  if ($api_url | is-empty) { 
+    error make { msg: "--api_url is required" } 
+  }
+  let platform = canon_platform $platform_url $api_url
+
   # All usernames that end with [bot] are bots and we allow it. The `[]`
   # characters aren't valid at the time of writing this for user accounts.
   if ($user | str ends-with "[bot]") {
@@ -1005,7 +856,7 @@ export def fj-check-user [
   # See if this user has special permissions for the target repo.
   if $allow_collaborator {
     let permission = try {
-      (api "get" $base_url
+      (api "get" $api_url
         $"/repos/($repo_parts.owner)/($repo_parts.name)/collaborators/($user)/permission"
         | get permission)
     } catch {
@@ -1021,14 +872,14 @@ export def fj-check-user [
   } else if ($default_branch | default "" | is-not-empty) {
     $default_branch
   } else {
-    (api "get" $base_url
+    (api "get" $api_url
       $"/repos/($vouch_parts.owner)/($vouch_parts.name)"
       | get default_branch)
   }
 
   # Grab the vouched file contents
   let records = try {
-    let file_data = (api "get" $base_url
+    let file_data = (api "get" $api_url
       $"/repos/($vouch_parts.owner)/($vouch_parts.name)/contents/($vouched_file)?ref=($branch)")
     ($file_data.content
       | str replace -a "\n" ""
@@ -1040,14 +891,14 @@ export def fj-check-user [
   }
 
   # Check the status using standard lib functions
-  let vouch_status = $records | check-user $user --default-platform github
+  let vouch_status = $records | check-user $user --default-platform $platform
   { status: $vouch_status }
 }
 
 # Create a pull request from the given branch into the
 # repository's default branch.
 def open-pr [
-  base_url: string,
+  api_url: string, # Api to use
   owner: string,   # Repository owner
   repo: string,    # Repository name
   branch: string,  # Head branch name
@@ -1056,11 +907,11 @@ def open-pr [
   --merge-immediately = false, # Merge the PR immediately after creation
 ] {
   let repo_data = (
-    api "get" $base_url $"/repos/($owner)/($repo)"
+    api "get" $api_url $"/repos/($owner)/($repo)"
   )
   let base = $repo_data.default_branch
 
-  let pr = api "post" $base_url $"/repos/($owner)/($repo)/pulls" {
+  let pr = api "post" $api_url $"/repos/($owner)/($repo)/pulls" {
     title: $title,
     body: $body,
     head: $branch,
@@ -1068,47 +919,26 @@ def open-pr [
   }
 
   if $merge_immediately {
-    api "put" $base_url (
+    api "put" $api_url (
       $"/repos/($owner)/($repo)/pulls/($pr.number)/merge"
     ) {
       merge_method: "squash",
     }
 
     # Delete the head branch after merge
-    api "delete" $base_url (
+    api "delete" $api_url (
       $"/repos/($owner)/($repo)/git/refs/heads/($branch)"
     )
   }
 }
 
 # Add a reaction emoji to a Forgejo issue comment using the Reactions API.
-def react [owner: string, base_url: string, repo: string, comment_id: int, reaction: string] {
-  api "post" $base_url $"/repos/($owner)/($repo)/issues/comments/($comment_id)/reactions" {
+def react [owner: string, api_url: string, repo: string, comment_id: int, reaction: string] {
+  api "post" $api_url $"/repos/($owner)/($repo)/issues/comments/($comment_id)/reactions" {
     content: $reaction
   }
 }
 
-# Add a reaction emoji to a GitHub node (e.g. discussion comment) using GraphQL.
-def react-graphql [node_id: string, reaction: string] {
-  let content = match $reaction {
-    "+1" => "THUMBS_UP",
-    "-1" => "THUMBS_DOWN",
-    "laugh" => "LAUGH",
-    "confused" => "CONFUSED",
-    "heart" => "HEART",
-    "hooray" => "HOORAY",
-    "rocket" => "ROCKET",
-    "eyes" => "EYES",
-    _ => ($reaction | str upcase),
-  }
-
-  const gql_dir = (path self | path dirname | path join "gql")
-  let query = open -r ([$gql_dir "hj-add-reaction.gql"] | path join)
-  graphql $query --variables {
-    subject_id: $node_id,
-    content: $content,
-  }
-}
 
 # Make a Forgejo API request with proper headers.
 #
@@ -1117,17 +947,17 @@ def react-graphql [node_id: string, reaction: string] {
 # 1s, 2s, 4s, 8s, 16s (~30s total).
 #
 # Retried status codes:
-#   - 401/403: transient auth errors (e.g., GitHub Actions
+#   - 401/403: transient auth errors (e.g., Foregjo Actions
 #     token propagation race)
 #   - 429: rate limiting
 #   - 5xx: server errors
 def api [
   method: string,  # HTTP method (get, post, patch, etc.)
-  base_url: string,
+  api_url: string, # API url (e.g., https://codeberg.com/api/v1)
   endpoint: string # API endpoint (e.g., /repos/owner/repo/issues/1/comments)
   body?: record    # Optional request body
 ] {
-  let url = $"($base_url)/api/v1($endpoint)"
+  let url = $"($api_url)($endpoint)"
   let headers = [
     Authorization $"Bearer (get-token)"
     Accept "application/json"
@@ -1163,7 +993,7 @@ def api [
 # Check if an HTTP status code is retryable.
 #
 # Retryable codes:
-#   - 401/403: transient auth errors (GitHub Actions token
+#   - 401/403: transient auth errors (Foregjo Actions token
 #     propagation race)
 #   - 429: rate limiting
 #   - 5xx: server errors
@@ -1181,54 +1011,6 @@ def api-check-status [] {
         | get -o http_response.status
         | default 200),
     }
-  }
-}
-
-# Make a GitHub GraphQL API request.
-#
-# Retries on transient errors with exponential backoff.
-# Retries up to 5 times with delays of
-# 1s, 2s, 4s, 8s, 16s (~30s total).
-# See `is-retryable` for retried status codes.
-def graphql [
-  query: string          # GraphQL query or mutation string
-  --variables: record    # Optional GraphQL variables
-] {
-  let url = "https://api.github.com/graphql"
-  let headers = [
-    Authorization $"Bearer (get-token)"
-    Accept "application/vnd.github+json"
-  ]
-  let payload = if ($variables | is-empty) {
-    { query: $query }
-  } else {
-    { query: $query, variables: $variables }
-  } | to json
-
-  mut attempt = 0
-  loop {
-    let resp = (http post --allow-errors $url
-      --headers $headers
-      --content-type application/json $payload
-      | api-check-status)
-
-    if (is-retryable $resp.status) and $attempt < 5 {
-      $attempt += 1
-      sleep (1sec * (2 ** ($attempt - 1)))
-      continue
-    }
-
-    if $resp.status >= 400 {
-      error make {
-        msg: $"($resp.status) POST ($url)"
-      }
-    }
-
-    let response = $resp.body
-    if ($response | get -o errors | default null) != null {
-      error make { msg: ($response.errors | to json) }
-    }
-    return $response
   }
 }
 
@@ -1265,12 +1047,14 @@ def get-token [] {
 #   - ref: git ref to read from (empty = default branch)
 export def can-manage [
   username: string, # Username of the Forgejo user to check
-  base_url: string,
+  api_url: string,  # Url for api requests
   repo_owner: string, # Repository owner (e.g., "mitchellh") for vouch file
   repo_name: string, # Repository name (e.g., "vouch") for vouch file
   --roles: list<string>, # Roles to allow
   --legacy-permissions: list<string>, # Legacy permissions to allow
   --vouched-managers: record, # Optional managers file config
+  --platform_url: string,  # Url for the Forgejo instance
+
 ] {
   let real_roles = $roles | default --empty [
     admin
@@ -1294,7 +1078,7 @@ export def can-manage [
   }
 
   let api_perm = try {
-    api "get" base_url $"/repos/($repo_owner)/($repo_name)/collaborators/($username)/permission"
+    api "get" api_url $"/repos/($repo_owner)/($repo_name)/collaborators/($username)/permission"
   } catch {
     null
   }
@@ -1325,11 +1109,25 @@ export def can-manage [
     $vouched_managers.repo
   }
   let result = (fj-check-user $username
-    --base_url $base_url
     --repo $"($repo_owner)/($repo_name)"
+    --api_url $api_url
+    --platform_url $platform_url
     --vouched-repo $repo
     --vouched-file $file
     --vouched-ref ($vouched_managers.ref | default "")
     --allow-collaborator=false)
   $result.status == "vouched"
+}
+
+# Canonicalize platform
+# - removes http(s):// from the start
+# - converts to lower case
+#
+# Right now it uses the api_url if no platform is provded, 
+# I'm not sure if thats a good idea since
+def canon_platform [platform: string, api_url: string] {
+  return ($platform 
+    | default -e $api_url
+    | str replace -r r#'^https?://'# "" 
+    | str downcase )
 }
