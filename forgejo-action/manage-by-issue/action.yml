@@ -41,11 +41,11 @@ inputs:
     required: false
     default: ""
   platform_url:
-    description: "Url for the platform (ex: codeberg.com) (default: current url for current platform)."
+    description: "Url for the platform (ex: codeberg.org) (default: current url for current platform)."
     required: false
     default: ""
   api_url:
-    description: "Url to send api requests (ex: https://codeberg.com/api/v1)  (default: current api for current platform)."
+    description: "Url to send api requests (ex: https://codeberg.org/api/v1)  (default: current api for current platform)."
     required: false
     default: ""
   roles:

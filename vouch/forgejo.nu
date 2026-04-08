@@ -15,9 +15,6 @@ use template.nu
 const pr_template = path self ./templates/forgejo-pr-unvouched
 const issue_template = path self ./templates/forgejo-issue-unvouched
 
-const default_api_path =  "/api/v1"
-
-
 # Check if a PR author is a vouched contributor.
 #
 # This checks if the PR author is:
@@ -60,7 +57,7 @@ export def fj-check-pr [
   pr_number: int,              # Forgejo PR number
   --repo (-R): string,         # Repository in "owner/repo" format (required)
   --api_url(-A): string,       # Url for api requests (defaults to --platform+default_api_path)
-  --platform_url (-P): string,     # Url for Forgejo instance
+  --platform_url (-P): string, # Url for Forgejo instance
   --vouched-repo: string,      # Repository for the vouched file (defaults to --repo)
   --vouched-file: string = ".forejo/VOUCHED.td", # Path to vouched contributors file in the repo
   --template-file: string = $pr_template,        # Optional path to response template to use for unvouched users
