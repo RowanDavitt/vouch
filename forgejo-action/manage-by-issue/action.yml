@@ -1,0 +1,123 @@
+name: Manage by Issue
+description: "Manage contributor vouch status via issue comments (vouch/denounce/unvouch)."
+
+inputs:
+  comment-id:
+    description: "Forgejo comment ID."
+    required: true
+  issue-id:
+    description: "Forgejo issue number."
+    required: true
+  allow-denounce:
+    description: "Enable denounce handling to denounce users."
+    required: false
+    default: "true"
+  allow-unvouch:
+    description: "Enable unvouch handling to remove users."
+    required: false
+    default: "true"
+  allow-vouch:
+    description: "Enable vouch keyword handling to vouch for contributors."
+    required: false
+    default: "true"
+  denounce-keyword:
+    description: "Comma-separated list of keywords that trigger denouncing (default: denounce)."
+    required: false
+    default: ""
+  dry-run:
+    description: "Print what would happen without making changes."
+    required: false
+    default: "false"
+  merge-immediately:
+    description: "Merge the pull request immediately after creation (only applies when pull-request is true)."
+    required: false
+    default: "false"
+  pull-request:
+    description: "Create a pull request instead of pushing directly."
+    required: false
+    default: "false"
+  repo:
+    description: "Repository in 'owner/repo' format (default: current repository)."
+    required: false
+    default: ""
+  roles:
+    description: "Comma-separated list of GitHub role names allowed to manage (default: admin,maintain,write,triage)."
+    required: false
+    default: ""
+  unvouch-keyword:
+    description: "Comma-separated list of keywords that trigger unvouching (default: unvouch)."
+    required: false
+    default: ""
+  vouch-keyword:
+    description: "Comma-separated list of keywords that trigger vouching (default: vouch)."
+    required: false
+    default: ""
+  vouched-file:
+    description: "Path to the vouched contributors file (empty = auto-detect)."
+    required: false
+    default: ""
+  vouched-managers-file:
+    description: "Path to managers VOUCHED file (empty = disable managers check)."
+    required: false
+    default: ""
+  vouched-managers-ref:
+    description: "Git ref for the managers file (default: repository default branch)."
+    required: false
+    default: ""
+  vouched-managers-repo:
+    description: "Repository in 'owner/repo' format for managers file (default: target repo)."
+    required: false
+    default: ""
+
+outputs:
+  status:
+    description: "Result status: vouched, denounced, unvouched, or unchanged"
+    value: ${{ steps.run.outputs.status }}
+
+runs:
+  using: composite
+  steps:
+    - uses: codeberg.org/NiceGuyIT/action-install-nushell@8ae3885bd39c1b0f31ac32fd9a415d5c2799b9cf
+
+    - id: run
+      shell: nu {0}
+      run: |
+        use "${{ forgejo.action_path }}/../../vouch" *
+
+        let vouch_kw = "${{ inputs.vouch-keyword }}" | split row "," | each { str trim } | where { $in | is-not-empty }
+        let denounce_kw = "${{ inputs.denounce-keyword }}" | split row "," | each { str trim } | where { $in | is-not-empty }
+        let unvouch_kw = "${{ inputs.unvouch-keyword }}" | split row "," | each { str trim } | where { $in | is-not-empty }
+        let roles = "${{ inputs.roles }}" | split row "," | each { str trim } | where { $in | is-not-empty }
+        let vouched_managers = if ("${{ inputs.vouched-managers-file }}" | is-not-empty) {
+          {
+            repo: "${{ inputs.vouched-managers-repo }}"
+            file: "${{ inputs.vouched-managers-file }}"
+            ref: "${{ inputs.vouched-managers-ref }}"
+          }
+        } else {
+          null
+        }
+
+        let commit_url = $"($env.FORGEJO_SERVER_URL)/${{ inputs.repo || forgejo.repository }}/issues/${{ inputs.issue-id }}#issuecomment-${{ inputs.comment-id }}"
+        let commit_msg = $"Update VOUCHED list\n\n($commit_url)"
+
+        let status = (fj-manage-by-issue
+          ${{ inputs.issue-id }}
+          ${{ inputs.comment-id }}
+          --base_url "${{ inputs.url || forgejo.server_url }}"
+          --repo "${{ inputs.repo || forgejo.repository }}"
+          --vouched-file "${{ inputs.vouched-file }}"
+          --vouch-keyword $vouch_kw
+          --denounce-keyword $denounce_kw
+          --unvouch-keyword $unvouch_kw
+          --allow-vouch=${{ inputs.allow-vouch }}
+          --allow-denounce=${{ inputs.allow-denounce }}
+          --allow-unvouch=${{ inputs.allow-unvouch }}
+          --roles $roles
+          --vouched-managers $vouched_managers
+          --commit-message $commit_msg
+          --pull-request=${{ inputs.pull-request }}
+          --merge-immediately=${{ inputs.merge-immediately }}
+          --dry-run=${{ inputs.dry-run }}
+        )
+        $"status=($status)" | save --append $env.FORGEJO_OUTPUT

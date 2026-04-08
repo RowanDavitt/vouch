@@ -1,0 +1,59 @@
+name: Sync Codeowners
+description: "Sync CODEOWNERS entries into the VOUCHED list."
+
+inputs:
+  repo:
+    description: "Repository in 'owner/repo' format (default: current)."
+    required: false
+    default: ""
+  codeowners-file:
+    description: "Path to CODEOWNERS file (empty = auto-detect)."
+    required: false
+    default: ""
+  dry-run:
+    description: "Print what would happen without making changes."
+    required: false
+    default: "false"
+  vouched-file:
+    description: "Path to the VOUCHED file (empty = auto-detect)."
+    required: false
+    default: ""
+  commit-message:
+    description: "Commit message override."
+    required: false
+    default: ""
+  merge-immediately:
+    description: "Merge the pull request immediately after creation."
+    required: false
+    default: "false"
+  pull-request:
+    description: "Create a pull request instead of pushing directly."
+    required: false
+    default: "false"
+
+outputs:
+  status:
+    description: "Result status: updated or unchanged"
+    value: ${{ steps.run.outputs.status }}
+
+runs:
+  using: composite
+  steps:
+    - uses: codeberg.org/NiceGuyIT/action-install-nushell@8ae3885bd39c1b0f31ac32fd9a415d5c2799b9cf
+
+    - id: run
+      shell: nu {0}
+      run: |
+        use "${{ forgejo.action_path }}/../../vouch" *
+
+        let status = (fj-sync-codeowners
+          --base_url "${{ inputs.url || forgejo.server_url }}"
+          --repo "${{ inputs.repo || forgejo.repository }}"
+          --codeowners-file "${{ inputs.codeowners-file }}"
+          --vouched-file "${{ inputs.vouched-file }}"
+          --commit-message "${{ inputs.commit-message }}"
+          --pull-request=${{ inputs.pull-request }}
+          --merge-immediately=${{ inputs.merge-immediately }}
+          --dry-run=${{ inputs.dry-run }}
+        )
+        $"status=($status)" | save --append $env.FORGEJO_OUTPUT
