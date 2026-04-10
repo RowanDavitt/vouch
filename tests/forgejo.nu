@@ -103,9 +103,9 @@ export def "test slow fj-check-pr missing repo errors" [] {
 
 export def "test slow fj-check-issue owner is vouched" [] {
   skip-without-token
-  # Issue #1 is by RowanDavitt (repo owner)
+  # Issue #6 is by RowanDavitt (repo owner)
   let result = (
-    fj-check-issue 1 -R $REPO -A $API_URL -P $PLATFORM --dry-run=true
+    fj-check-issue 6 -R $REPO -A $API_URL -P $PLATFORM --dry-run=true
   )
   assert equal $result "vouched"
 }

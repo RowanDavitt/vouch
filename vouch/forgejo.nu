@@ -207,10 +207,10 @@ export def fj-check-pr [
 export def fj-check-issue [
   issue_number: int,             # Forgejo issue number
   --repo (-R): string,           # Repository in "owner/repo" format (required)
-  --platform_url (-P): string,   # Url for the Forgejo instance
   --api_url (-A): string,        # Url for api requests
+  --platform_url (-P): string,   # Url for the Forgejo instance
   --vouched-repo: string,        # Repository for the vouched file (defaults to --repo)
-  --vouched-file: string = ".github/VOUCHED.td", # Path to vouched contributors file in the repo
+  --vouched-file: string = ".forgejo/VOUCHED.td", # Path to vouched contributors file in the repo
   --template-file: string = $issue_template,     # Optional path to response template to use for unvouched users
   --require-vouch = true,        # Require users to be vouched (false = only block denounced)
   --auto-close = false,          # Automatically close issues from unvouched/denounced users
@@ -859,7 +859,7 @@ export def fj-check-user [
     } catch {
       null
     }
-    if $permission in ["admin", "write"] {
+    if $permission in ["admin", "owner", "write"] {
       return { status: "collaborator", permission: $permission }
     }
   }
@@ -1053,6 +1053,7 @@ export def can-manage [
 
 ] {
   let real_roles = $roles | default --empty [
+    owner
     admin
     maintain
     write
