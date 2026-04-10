@@ -59,7 +59,7 @@ export def fj-check-pr [
   --api_url(-A): string,       # Url for api requests (defaults to --platform+default_api_path)
   --platform_url (-P): string, # Url for Forgejo instance
   --vouched-repo: string,      # Repository for the vouched file (defaults to --repo)
-  --vouched-file: string = ".forejo/VOUCHED.td", # Path to vouched contributors file in the repo
+  --vouched-file: string = ".forgejo/VOUCHED.td", # Path to vouched contributors file in the repo
   --template-file: string = $pr_template,        # Optional path to response template to use for unvouched users
   --require-vouch = true,      # Require users to be vouched (false = only block denounced)
   --auto-close = false,        # Automatically close PRs from unvouched/denounced users
@@ -81,8 +81,8 @@ export def fj-check-pr [
 
   let result = (fj-check-user $pr_author
     -R $repo
+    -A $api_url
     -P $platform
-    --api_url $api_url
     --vouched-repo $vouched_repo
     --vouched-file $vouched_file
     --default-branch $default_branch)
@@ -888,7 +888,7 @@ export def fj-check-user [
   }
 
   # Check the status using standard lib functions
-  let vouch_status = $records | check-user $user --default-platform $platform
+  let vouch_status = $records | check-user $user --default-platform github
   { status: $vouch_status }
 }
 
@@ -1016,8 +1016,7 @@ def get-token [] {
   if ($env.FORGEJO_TOKEN? | is-not-empty) {
     return $env.FORGEJO_TOKEN
   }
-
-  $env.FORGEJO_TOKEN
+  error make { msg: "FORGEJO_TOKEN was not set" }
 }
 
 # Check if a given Forgejo user can manage vouch status for a vouch
