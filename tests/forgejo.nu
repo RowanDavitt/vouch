@@ -261,10 +261,10 @@ export def "test slow can-manage with restrictive roles" [] {
 
 export def "test slow can-manage with matching role" [] {
   skip-without-token
-  # RowanDavitt is admin; include "admin" in roles
+  # RowanDavitt is owner; include "owner" in roles
   let result = (
     can-manage "RowanDavitt" $API_URL "RowanDavitt" "vouch"
-      --roles [admin]
+      --roles [owner]
       --platform_url $PLATFORM
   )
   assert equal $result true
