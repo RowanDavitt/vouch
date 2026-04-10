@@ -228,7 +228,7 @@ export def "test slow fj-check-issue with vouched-repo" [] {
 
 # --- can-manage ---
 
-export def "test slow can-manage owner has access" [] {
+export def "test slow fj-can-manage owner has access" [] {
   skip-without-token
   # RowanDavitt is the repo owner (admin)
   let result = (
@@ -237,7 +237,7 @@ export def "test slow can-manage owner has access" [] {
   assert equal $result true
 }
 
-export def "test slow can-manage non-collaborator denied" [] {
+export def "test slow fj-can-manage non-collaborator denied" [] {
   skip-without-token
   # evil_rowan is not a collaborator on RowanDavitt/vouch
   let result = (
@@ -247,7 +247,7 @@ export def "test slow can-manage non-collaborator denied" [] {
   assert equal $result false
 }
 
-export def "test slow can-manage with restrictive roles" [] {
+export def "test slow fj-can-manage with restrictive roles" [] {
   skip-without-token
   # RowanDavitt is admin; restrict to only "maintain"
   # so admin should be denied
@@ -259,7 +259,7 @@ export def "test slow can-manage with restrictive roles" [] {
   assert equal $result false
 }
 
-export def "test slow can-manage with matching role" [] {
+export def "test slow fj-can-manage with matching role" [] {
   skip-without-token
   # RowanDavitt is owner; include "owner" in roles
   let result = (
@@ -270,20 +270,20 @@ export def "test slow can-manage with matching role" [] {
   assert equal $result true
 }
 
-export def "test slow can-manage legacy-permissions override" [] {
+export def "test slow fj-can-manage legacy-permissions override" [] {
   skip-without-token
   # With roles set (no legacy default) but
-  # legacy-permissions explicitly including "admin"
+  # legacy-permissions explicitly including "owner"
   let result = (
     can-manage "RowanDavitt" $API_URL "RowanDavitt" "vouch"
       --roles [maintain]
-      --legacy-permissions [admin]
+      --legacy-permissions [owner]
       --platform_url $PLATFORM
   )
   assert equal $result true
 }
 
-export def "test slow can-manage empty legacy with roles" [] {
+export def "test slow fj-can-manage empty legacy with roles" [] {
   skip-without-token
   # When roles is set, legacy perms default to [].
   # With non-matching roles and no legacy fallback,

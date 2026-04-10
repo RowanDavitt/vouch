@@ -1050,7 +1050,7 @@ export def can-manage [
     default --empty [] |
     is-empty
   ) {
-    [admin, write]
+    [admin, write, owner]
   } else {
     []
   }
