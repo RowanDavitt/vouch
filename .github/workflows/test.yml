@@ -59,3 +59,4 @@ jobs:
         run: nu tests/run.nu --slow
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
